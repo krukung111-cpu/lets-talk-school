@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // เปลี่ยนอีเมลนี้เป็นบัญชีครูที่ยืนยันอีเมลแล้ว ก่อนเผยแพร่ใช้งานจริง
+    function isTeacher() {
+      return request.auth != null
+        && request.auth.token.email == 'teacher@example.com'
+        && request.auth.token.email_verified == true;
+    }
+    function isStudentOwner(id) {
+      return request.auth != null && request.auth.uid == id
+        && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+    function validRecord(d) {
+      return d.keys().hasOnly(['uid', 'name', 'className', 'number', 'completed', 'practiced', 'score', 'createdAt', 'updatedAt', 'submittedAt', 'answers'])
+        && d.uid is string && d.uid == request.auth.uid
+        && d.name is string && d.name.size() >= 3 && d.name.size() <= 150
+        && d.className is string && d.className.size() <= 30
+        && d.number is string && d.number.size() <= 4
+        && d.completed is list && d.completed.size() == 3
+        && d.practiced is list && d.practiced.size() == 3
+        && (d.score == null || (d.score is int && d.score >= 0 && d.score <= 5));
+    }
+    match /students/{studentId} {
+      allow get: if isTeacher() || isStudentOwner(studentId);
+      allow list: if isTeacher();
+      allow create: if isStudentOwner(studentId) && validRecord(request.resource.data)
+        && request.resource.data.score == null;
+      allow update: if isStudentOwner(studentId) && validRecord(request.resource.data)
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && (resource.data.score == null || request.resource.data.score == resource.data.score)
+        && (resource.data.get('submittedAt', null) == null || request.resource.data.submittedAt == resource.data.submittedAt);
+      allow delete: if false;
+    }
+  }
+}
